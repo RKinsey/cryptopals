@@ -5,3 +5,4 @@ authors = ["Ross Kinsey <rkinsey@gmu.edu>"]
 edition = "2018"
 
 [dependencies]
+hex="0.4.0"
