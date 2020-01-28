@@ -1,6 +1,7 @@
 package cryptopals
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -25,4 +26,31 @@ func TestFixedXOR(t *testing.T) {
 		t.Fail()
 	}
 
+}
+func TestOneByteXOR(t *testing.T) {
+	input := "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736"
+	decrypted, _, err := OneByteXOR(input)
+	if err != nil {
+		t.Error(err)
+	}
+	fmt.Printf("%s\n", decrypted)
+}
+
+func TestOneByteXORLines(t *testing.T) {
+	infile := "4.txt"
+	_, err := OneByteXORLines(infile)
+	if err != nil {
+		t.Error(err)
+	}
+
+}
+func TestRepeatingKeyXOR(t *testing.T) {
+	input1 := `Burning 'em, if you ain't quick and nimble
+I go crazy when I hear a cymbal`
+	key := "ICE"
+	encrypted := RepeatingKeyXOR(input1, key)
+	if encrypted != `0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272
+a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f` {
+		t.Fatal(encrypted)
+	}
 }
