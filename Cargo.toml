@@ -1,0 +1,7 @@
+[package]
+name = "crypals"
+version = "0.1.0"
+authors = ["Ross Kinsey <rkinsey@gmu.edu>"]
+edition = "2018"
+
+[dependencies]
