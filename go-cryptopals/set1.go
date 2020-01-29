@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -68,12 +69,13 @@ var frequents = map[string]float64{
 	"z": .07,
 }
 
-func OneByteXOR(input string) (string, float64, error) {
+func OneByteXOR(input string) (string, float64, byte, error) {
 	decoded, err := hex.DecodeString(input)
 	if err != nil {
-		return "", -1, err
+		return "", -1, 0, err
 	}
 	bestScore := 0.
+	bestChar := byte(0)
 	var bestDecrypt []byte
 	//not clear if printable or not, assuming in ASCII
 	for char := byte(0x00); char < unicode.MaxASCII; char++ {
@@ -104,11 +106,12 @@ func OneByteXOR(input string) (string, float64, error) {
 
 		if score > bestScore {
 			//fmt.Printf("%s:%f\n", decrypted, score)
+			bestChar = char
 			bestScore = score
 			bestDecrypt = decrypted
 		}
 	}
-	return string(bestDecrypt), bestScore, nil
+	return string(bestDecrypt), bestScore, bestChar, nil
 }
 func OneByteXORLines(inputfile string) (string, error) {
 	input, err := os.Open(inputfile)
@@ -122,7 +125,7 @@ func OneByteXORLines(inputfile string) (string, error) {
 	index := 0
 	bestIndex := 0
 	for scanner.Scan() {
-		decrypted, score, err := OneByteXOR(scanner.Text())
+		decrypted, score, _, err := OneByteXOR(scanner.Text())
 		if err != nil {
 			return "", nil
 		} else if score > bestScore && err == nil {
@@ -135,10 +138,86 @@ func OneByteXORLines(inputfile string) (string, error) {
 	fmt.Printf("Best: %s\nScore: %f\nAt Line:%d\n", bestDecrypt, bestScore, bestIndex)
 	return bestDecrypt, nil
 }
-func RepeatingKeyXOR(input, key string) string {
+func RepeatingKeyXOR(input, key []byte) string {
+	toret := make([]byte, len(input))
+	for i := 0; i < len(input); i++ {
+		toret[i] = input[i] ^ key[i%len(key)]
+	}
+	return hex.EncodeToString(toret)
+}
+func hamming(i1, i2 []byte) float64 {
+	if len(i1) != len(i2) {
+		panic("inputs must be same length")
+	}
+	distance := 0.
+	for i, el1 := range i1 {
+		for x := el1 ^ i2[i]; x > 0; x >>= 1 {
+			if x&1 != 0 {
+				distance += 1
+			}
+		}
+	}
+	return distance
+}
+func transpose(blockLen int, input []byte) [][]byte {
+	toret := make([][]byte, blockLen)
+	for i := range toret {
+		toret[i] = make([]byte, len(input)+1)
+	}
+	mark := 0
+	for i, el := range input {
+		if i != 0 && i%blockLen == 0 {
+			mark++
+		}
+		toret[i%blockLen][mark] = el
+	}
+	return toret
+}
+func CrackXOR(input []byte) string {
+	type pair struct {
+		keysize int
+		score   float64
+	}
+	lenPairs := make([]*pair, 39)
+	for keysize := 2; keysize <= 40; keysize++ {
+		pk := new(pair)
+		pk.keysize = keysize
+		pk.score = hamming(input[0:keysize], input[keysize:2*keysize]) / float64(keysize)
+		lenPairs[keysize-2] = pk
+	}
+	sort.Slice(lenPairs, func(i, j int) bool {
+		return lenPairs[i].score < lenPairs[j].score
+	})
+	keylen := lenPairs[0].keysize
+	key := make([]byte, keylen)
+	transposed := transpose(keylen, input)
+	for j, entry := range transposed {
+		_, _, ch, err := OneByteXOR(string(entry))
+		if err != nil {
+			panic(err)
+		}
+		key[j] = ch
+	}
 	toret := make([]byte, len(input))
 	for i := 0; i < len(input); i++ {
 		toret[i] = input[i] ^ key[i%len(key)]
 	}
 	return string(toret)
+	/*
+		lenPairs = lenPairs[0:4]
+		keys := make([][]byte, len(lenPairs))
+		for i, k := range lenPairs {
+			keylen := k.keysize
+			transposed := transpose(keylen, input)
+			key := make([]byte, keylen)
+			for j, entry := range transposed {
+				_, _, ch, err := OneByteXOR(string(entry))
+				if err != nil {
+					panic(err)
+				}
+				key[j] = ch
+			}
+			keys[i] = key
+		}*/
+
 }
