@@ -1,6 +1,7 @@
 package cryptopals
 
 import (
+	"encoding/hex"
 	"fmt"
 	"io/ioutil"
 	"testing"
@@ -30,7 +31,11 @@ func TestFixedXOR(t *testing.T) {
 }
 func TestOneByteXOR(t *testing.T) {
 	input := "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736"
-	decrypted, _, _, err := OneByteXOR(input)
+	decoded, err := hex.DecodeString(input)
+	if err != nil {
+		t.Error(err)
+	}
+	decrypted, _, _, err := OneByteXOR(decoded)
 	if err != nil {
 		t.Error(err)
 	}
@@ -54,12 +59,24 @@ I go crazy when I hear a cymbal`
 		t.Fatal(encrypted)
 	}
 }
+func TestHamming(t *testing.T) {
+	input1 := []byte("this is a test")
+	input2 := []byte("wokka wokka!!!")
+	dist := hamming(input1, input2)
+	if dist != 37 {
+		t.Fail()
+	}
+}
 func TestBreakingXOR(t *testing.T) {
 	input, err := ioutil.ReadFile("6.txt")
 	if err != nil {
 		t.Error(err)
 	}
-	decrypted := CrackXOR(input)
+
+	decrypted := CrackXORBase64(input)
+	if decrypted == "" {
+		t.Fail()
+	}
 	fmt.Printf("%s\n", decrypted)
 
 }
