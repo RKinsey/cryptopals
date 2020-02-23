@@ -1,9 +1,12 @@
 package cryptopals
 
 import (
+	"bufio"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"testing"
 )
 
@@ -54,7 +57,7 @@ func TestRepeatingKeyXOR(t *testing.T) {
 	input1 := `Burning 'em, if you ain't quick and nimble
 I go crazy when I hear a cymbal`
 	key := "ICE"
-	encrypted := RepeatingKeyXOR([]byte(input1), []byte(key))
+	encrypted := RepeatingKeyXORAsHex([]byte(input1), []byte(key))
 	if encrypted != `0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f` {
 		t.Fatal(encrypted)
 	}
@@ -67,16 +70,55 @@ func TestHamming(t *testing.T) {
 		t.Fail()
 	}
 }
+
 func TestBreakingXOR(t *testing.T) {
 	input, err := ioutil.ReadFile("6.txt")
 	if err != nil {
 		t.Error(err)
 	}
+	decoded, err := base64.StdEncoding.DecodeString(string(input))
 
-	decrypted := CrackXORBase64(input)
-	if decrypted == "" {
-		t.Fail()
+	if err != nil {
+		panic(err)
 	}
-	fmt.Printf("%s\n", decrypted)
+	key := CrackXORKey(decoded)
 
+	fmt.Printf("Key: %s\n", key)
+	fmt.Printf("Decrypted: %s", RepeatingKeyXOR(decoded, key))
+}
+
+func TestDecryptECB(t *testing.T) {
+	key := []byte("YELLOW SUBMARINE")
+	input, err := ioutil.ReadFile("7.txt")
+	if err != nil {
+		t.Error(err)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(string(input))
+	if err != nil {
+		panic(err)
+	}
+	decrypted := DecryptECB(decoded, key)
+	fmt.Printf("%s\n", decrypted)
+}
+
+func TestDetectECB(t *testing.T) {
+	input, err := os.Open("8.txt")
+	if err != nil {
+		t.Error(err)
+	}
+	defer input.Close()
+	scanner := bufio.NewScanner(input)
+	index := 0
+	for scanner.Scan() {
+		decoded, err := hex.DecodeString(scanner.Text())
+		if err != nil {
+			t.Error(err)
+		}
+		isECB := DetectECB(decoded)
+		if isECB {
+			fmt.Printf("ECB at entry %d\n ", index)
+			break
+		}
+		index++
+	}
 }

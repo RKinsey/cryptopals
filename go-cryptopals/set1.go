@@ -2,12 +2,12 @@ package cryptopals
 
 import (
 	"bufio"
+	"crypto/aes"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 )
 
@@ -146,12 +146,15 @@ func OneByteXORLines(inputfile string) (string, error) {
 	fmt.Printf("OneByteXORLines Best: %s\nScore: %f\nAt Line:%d\n", bestDecrypt, bestScore, bestIndex)
 	return bestDecrypt, nil
 }
+func RepeatingKeyXORAsHex(input, key []byte) string {
+	return hex.EncodeToString([]byte(RepeatingKeyXOR(input, key)))
+}
 func RepeatingKeyXOR(input, key []byte) string {
 	toret := make([]byte, len(input))
 	for i := 0; i < len(input); i++ {
 		toret[i] = input[i] ^ key[i%len(key)]
 	}
-	return hex.EncodeToString(toret)
+	return string(toret)
 }
 func hamming(i1, i2 []byte) float64 {
 	if len(i1) != len(i2) {
@@ -171,7 +174,7 @@ func FindXORKeySize(input []byte) int {
 	best := -1
 	bestDist := -1.
 	for keysize := 2; keysize <= 40; keysize++ {
-		dist := hamming(input[:keysize], input[keysize:keysize*2])
+		dist := hamming(input[:keysize*4], input[keysize*4:keysize*8]) / 4.
 		normDist := dist / float64(keysize)
 		if best == -1 || normDist < bestDist {
 			best = keysize
@@ -190,66 +193,50 @@ func transpose(blockLen int, input []byte) [][]byte {
 	}
 	return toret
 }
-func CrackXORBase64(input []byte) string {
-	decoded, err := base64.StdEncoding.DecodeString(string(input))
 
+func CrackXORKey(input []byte) []byte {
+
+	keylen := FindXORKeySize(input)
+	key := make([]byte, keylen)
+	transposed := transpose(keylen, input)
+	for j, entry := range transposed {
+		_, _, ch, err := OneByteXOR(entry)
+		if err != nil {
+			panic(err)
+		}
+		key[j] = ch
+	}
+	return key
+}
+
+func DecryptECB(input, key []byte) []byte {
+	ecb, err := aes.NewCipher(key)
 	if err != nil {
 		panic(err)
 	}
-	return CrackXOR(decoded)
-}
-func CrackXOR(input []byte) string {
-	type pair struct {
-		keysize int
-		score   float64
+	blocksize := ecb.BlockSize()
+	if len(input)%blocksize != 0 {
+		panic("input not multiple of blocksize")
 	}
-	lenPairs := make([]*pair, 39)
-	for keysize := 2; keysize <= 40; keysize++ {
-		pk := new(pair)
-		pk.keysize = keysize
-		pk.score = hamming(input[0:keysize], input[keysize:2*keysize]) / float64(keysize)
-		lenPairs[keysize-2] = pk
-	}
-	sort.Slice(lenPairs, func(i, j int) bool {
-		return lenPairs[i].score < lenPairs[j].score
-	})
-	var toRet string
-	var bestScore float64 = 0
-	for _, lenpair := range lenPairs {
-		keylen := lenpair.keysize
-		key := make([]byte, keylen)
-		transposed := transpose(keylen, input)
-		var keyscore float64
-		for j, entry := range transposed {
-			_, blockscore, ch, err := OneByteXOR(entry)
-			if err != nil {
-				panic(err)
-			}
-			keyscore += blockscore
-			key[j] = ch
-		}
-		decrypted := RepeatingKeyXOR(input, key)
-		if keyscore > bestScore {
-			toRet = decrypted
-			bestScore = keyscore
-		}
+	toRet := make([]byte, len(input))
+	for i := 0; i < len(input)/blocksize; i++ {
+		ecb.Decrypt(toRet[i*blocksize:], input[i*blocksize:])
 	}
 	return toRet
-	/*
-		lenPairs = lenPairs[0:4]
-		keys := make([][]byte, len(lenPairs))
-		for i, k := range lenPairs {
-			keylen := k.keysize
-			transposed := transpose(keylen, input)
-			key := make([]byte, keylen)
-			for j, entry := range transposed {
-				_, _, ch, err := OneByteXOR(string(entry))
-				if err != nil {
-					panic(err)
-				}
-				key[j] = ch
-			}
-			keys[i] = key
-		}*/
+}
 
+func DetectECB(input []byte) bool {
+	blocksize := 16
+	if len(input)%blocksize != 0 {
+		panic("input length != blocksize")
+	}
+	hist := make(map[string]bool)
+	for i := 0; i < len(input); i += blocksize {
+		curString := string(input[i : i+blocksize])
+		if hist[curString] {
+			return true
+		}
+		hist[curString] = true
+	}
+	return false
 }
