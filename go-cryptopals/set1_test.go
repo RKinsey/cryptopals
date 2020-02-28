@@ -23,7 +23,7 @@ func TestHexToBase64(t *testing.T) {
 func TestFixedXOR(t *testing.T) {
 	s1 := "1c0111001f010100061a024b53535009181c"
 	s2 := "686974207468652062756c6c277320657965"
-	out, err := FixedXOR(s1, s2)
+	out, err := FixedXORString(s1, s2)
 	if err != nil {
 		t.Error(err)
 	}
@@ -79,7 +79,7 @@ func TestBreakingXOR(t *testing.T) {
 	decoded, err := base64.StdEncoding.DecodeString(string(input))
 
 	if err != nil {
-		panic(err)
+		t.Error(err)
 	}
 	key := CrackXORKey(decoded)
 

@@ -7,10 +7,19 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strings"
 )
 
+func ReadBase64File(filename string) ([]byte, error) {
+	input, err := ioutil.ReadFile
+	if err != nil {
+		return nil, err
+	}
+	return base64.StdEncoding.DecodeString(string(input))
+
+}
 func HexToBase64(hexs string) (string, error) {
 	s, err := hex.DecodeString(hexs)
 	if err != nil {
@@ -19,7 +28,21 @@ func HexToBase64(hexs string) (string, error) {
 	fmt.Printf("%s\n", string(s))
 	return base64.StdEncoding.EncodeToString(s), nil
 }
-func FixedXOR(hex1, hex2 string) (string, error) {
+func XORSlices(input1, input2 []byte) ([]byte, error) {
+	switch {
+	case len(input1) > len(input2):
+		input1 = input1[:len(input2)]
+	case len(input1) < len(input2):
+		input2 = input2[:len(input1)]
+	}
+	xored := make([]byte, len(input1))
+	for i := 0; i < len(xored); i++ {
+		xored[i] = input1[i] ^ input2[i]
+	}
+
+	return xored, nil
+}
+func FixedXORString(hex1, hex2 string) (string, error) {
 	if len(hex1) != len(hex2) {
 		return "", errors.New("inputs are not the same length")
 	}
@@ -31,12 +54,8 @@ func FixedXOR(hex1, hex2 string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	xored := make([]byte, len(decoded1))
-	for i := 0; i < len(xored); i++ {
-		xored[i] = decoded1[i] ^ decoded2[i]
-	}
-	fmt.Printf("First:%s\nSecond:%s\nXORed:%s\n", decoded1, decoded2, xored)
-	return hex.EncodeToString(xored), nil
+	xored, _ := XORSlices(decoded1, decoded2) //already checked lengths
+	return string(xored), err
 }
 
 var frequents = map[string]float64{
@@ -209,18 +228,18 @@ func CrackXORKey(input []byte) []byte {
 	return key
 }
 
-func DecryptECB(input, key []byte) []byte {
+func DecryptECB(ciphertext, key []byte) []byte {
 	ecb, err := aes.NewCipher(key)
 	if err != nil {
 		panic(err)
 	}
 	blocksize := ecb.BlockSize()
-	if len(input)%blocksize != 0 {
+	if len(ciphertext)%blocksize != 0 {
 		panic("input not multiple of blocksize")
 	}
-	toRet := make([]byte, len(input))
-	for i := 0; i < len(input)/blocksize; i++ {
-		ecb.Decrypt(toRet[i*blocksize:], input[i*blocksize:])
+	toRet := make([]byte, len(ciphertext))
+	for i := 0; i < len(ciphertext)/blocksize; i++ {
+		ecb.Decrypt(toRet[i*blocksize:], ciphertext[i*blocksize:])
 	}
 	return toRet
 }
