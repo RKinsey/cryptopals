@@ -2,7 +2,9 @@ package cryptopals
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -41,7 +43,24 @@ func TestCBC(t *testing.T) {
 
 func TestECB_CBC_Oracle(t *testing.T) {
 	var cbc, ebc uint
+	test_txt := []byte(strings.Repeat("a", 16*5))
 	for i := 0; i < 100; i++ {
-		if DetectECBorCBC(EncryptionOracle())
+		if DetectECB(EncryptionOracle(test_txt), 16) {
+			ebc += 1
+		} else {
+			cbc += 1
+		}
 	}
+	fmt.Printf("EBC: %d CBC: %d", ebc, cbc)
+}
+
+func ByteAtATimeECBDecryption(t *testing.T) {
+	pretextString := "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK"
+	pretext, err := base64.StdEncoding.DecodeString(pretextString)
+	if err != nil {
+		t.Error(err)
+	}
+	oracle := MakeConsistentECBOracle(pretext)
+	SimpleECBDecrypt(oracle)
+
 }

@@ -1,8 +1,10 @@
 package cryptopals
 
 import (
+	"bytes"
 	"crypto/aes"
 	crand "crypto/rand"
+	"fmt"
 	"math/rand"
 )
 
@@ -90,7 +92,9 @@ func EncryptionOracle(plaintext []byte) []byte {
 	crand.Read(before)
 	crand.Read(after)
 	toEncrypt := append(append(before, plaintext...), after...)
-	if rand.Uint32()%2 == 0 {
+	toEncrypt = PadPKCS7(toEncrypt, 16)
+	e := rand.Uint32()
+	if e%2 == 0 {
 		iv := make([]byte, 16)
 		crand.Read(iv)
 		return EncryptCBC(toEncrypt, iv, RandomAESKey())
@@ -98,10 +102,51 @@ func EncryptionOracle(plaintext []byte) []byte {
 		return EncryptECB(toEncrypt, RandomAESKey())
 	}
 }
-func DetectECBorCBC(ciphertext []byte) bool {
-	if DetectECB(ciphertext) {
-		return true
-	} else {
-		return false
+func MakeConsistentECBOracle(pre []byte) func([]byte) []byte {
+	key := RandomAESKey()
+	pretext := append([]byte(nil), pre...)
+	return func(plaintext []byte) []byte {
+		toEncrypt := append(plaintext, pretext...)
+		return EncryptECB(PadPKCS7(toEncrypt, 16), key)
 	}
+}
+
+func SimpleECBDecrypt(oracle func([]byte) []byte) []byte {
+	isECB := false
+	blockLength := 0
+	for size := 1; size <= 256; size++ {
+		blockLength += 1
+		checktext := bytes.Repeat([]byte("a"), size)
+		checktext = bytes.Repeat(checktext, 5)
+		isECB = DetectECB(checktext, size)
+		if isECB {
+			blockLength = size
+			break
+		}
+	}
+	if blockLength == 0 {
+		panic("Not ECB or block length > 256")
+	}
+	makeDict := func(known []byte) map[string][]byte {
+		dict := make(map[string][]byte)
+		for i := byte(0); i <= 255; i++ {
+			pt := append(known, i)
+			dict[string(pt)] = oracle(pt)[:blockLength]
+		}
+		return dict
+	}
+	subtext := bytes.Repeat([]byte("a"), blockLength-1)
+	firstByteDict := makeDict(subtext)
+	encryptedFirstByte := oracle(subtext)[:blockLength]
+	firstByte := firstByteDict[string(encryptedFirstByte)][len(subtext)]
+	fmt.Printf("First byte: %s\n", firstByte)
+	ciphertextLen := len(oracle([]byte(nil)))
+	decrypted := make([]byte, 1, ciphertextLen)
+	decrypted[0] = firstByte
+	for i := 0; i < ciphertextLen; i++ {
+		currDict := makeDict(decrypted)
+
+	}
+
+	return nil
 }

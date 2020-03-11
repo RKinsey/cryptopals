@@ -114,7 +114,7 @@ func TestDetectECB(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		isECB := DetectECB(decoded)
+		isECB := DetectECB(decoded, 16)
 		if isECB {
 			fmt.Printf("ECB at entry %d\n ", index)
 			break

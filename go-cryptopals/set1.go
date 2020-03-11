@@ -13,7 +13,7 @@ import (
 )
 
 func ReadBase64File(filename string) ([]byte, error) {
-	input, err := ioutil.ReadFile
+	input, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -244,8 +244,7 @@ func DecryptECB(ciphertext, key []byte) []byte {
 	return toRet
 }
 
-func DetectECB(input []byte) bool {
-	blocksize := 16
+func DetectECB(input []byte, blocksize int) bool {
 	if len(input)%blocksize != 0 {
 		panic("input length != blocksize")
 	}
