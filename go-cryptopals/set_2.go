@@ -6,6 +6,7 @@ import (
 	crand "crypto/rand"
 	"fmt"
 	"math/rand"
+	"strings"
 )
 
 func MakeBytePadding(padval byte, padlen int) []byte {
@@ -16,9 +17,6 @@ func MakeBytePadding(padval byte, padlen int) []byte {
 	return padding
 }
 func PadPKCS7(plaintext []byte, blocksize int) []byte {
-	if len(plaintext)%blocksize == 0 {
-		return plaintext
-	}
 	padlen := blocksize - len(plaintext)%blocksize
 	padding := MakeBytePadding(byte(padlen), padlen)
 	return append(plaintext, padding...)
@@ -102,11 +100,11 @@ func EncryptionOracle(plaintext []byte) []byte {
 		return EncryptECB(toEncrypt, RandomAESKey())
 	}
 }
-func MakeConsistentECBOracle(pre []byte) func([]byte) []byte {
+func MakeConsistentECBOracle(uk []byte) func([]byte) []byte {
 	key := RandomAESKey()
-	pretext := append([]byte(nil), pre...)
-	return func(plaintext []byte) []byte {
-		toEncrypt := append(plaintext, pretext...)
+	unknown := append([]byte(nil), uk...)
+	return func(prefix []byte) []byte {
+		toEncrypt := append(prefix, unknown...)
 		return EncryptECB(PadPKCS7(toEncrypt, 16), key)
 	}
 }
@@ -114,11 +112,10 @@ func MakeConsistentECBOracle(pre []byte) func([]byte) []byte {
 func SimpleECBDecrypt(oracle func([]byte) []byte) []byte {
 	isECB := false
 	blockLength := 0
-	for size := 1; size <= 256; size++ {
+	for size := 1; size <= 256; size *= 2 {
 		blockLength += 1
-		checktext := bytes.Repeat([]byte("a"), size)
-		checktext = bytes.Repeat(checktext, 5)
-		isECB = DetectECB(checktext, size)
+		checktext := bytes.Repeat([]byte("a"), size*2)
+		isECB = DetectECB(oracle(checktext)[:size*2], size)
 		if isECB {
 			blockLength = size
 			break
@@ -127,26 +124,107 @@ func SimpleECBDecrypt(oracle func([]byte) []byte) []byte {
 	if blockLength == 0 {
 		panic("Not ECB or block length > 256")
 	}
-	makeDict := func(known []byte) map[string][]byte {
-		dict := make(map[string][]byte)
-		for i := byte(0); i <= 255; i++ {
-			pt := append(known, i)
-			dict[string(pt)] = oracle(pt)[:blockLength]
+	makeDict := func(prefix, known []byte) map[string]byte {
+		dict := make(map[string]byte)
+		if known != nil {
+			prefix = append(prefix, known...)
+			prefix = prefix[len(prefix)-blockLength+1:]
+		}
+		for i := 0; i < 256; i++ {
+			pt := append(prefix, byte(i))
+
+			or := oracle(pt)[:blockLength]
+			dict[string(or)] = byte(i)
 		}
 		return dict
 	}
 	subtext := bytes.Repeat([]byte("a"), blockLength-1)
-	firstByteDict := makeDict(subtext)
+	firstByteDict := makeDict(subtext, nil)
 	encryptedFirstByte := oracle(subtext)[:blockLength]
-	firstByte := firstByteDict[string(encryptedFirstByte)][len(subtext)]
-	fmt.Printf("First byte: %s\n", firstByte)
+	firstByte := firstByteDict[string(encryptedFirstByte)]
+	fmt.Printf("First byte: %s\n", string(firstByte))
 	ciphertextLen := len(oracle([]byte(nil)))
-	decrypted := make([]byte, 1, ciphertextLen)
-	decrypted[0] = firstByte
-	for i := 0; i < ciphertextLen; i++ {
-		currDict := makeDict(decrypted)
+	decrypted := make([]byte, 0, ciphertextLen)
+	for i := 0; i < ciphertextLen; i += blockLength {
+		//fmt.Printf("Block: %d\n", i)
+		for j := blockLength; j > 0; j-- {
+			blockPos := blockLength - j
+			//fmt.Printf("  Byte: %d\n", j)
+			prefix := bytes.Repeat([]byte("a"), j-1)
+			currDict := makeDict(prefix, decrypted)
+			//fmt.Printf("%v -> %v\n", append(prefix, decrypted[i:i+blockPos]...), oracle(prefix)[i:i+blockLength])
+
+			corrByte := currDict[string(oracle(prefix)[i:i+blockLength])]
+			decrypted = append(decrypted, corrByte)
+			if blockPos+i >= ciphertextLen {
+				break
+			}
+		}
 
 	}
 
-	return nil
+	return decrypted
+}
+
+func ParseProfile(prof string) map[string]string {
+	kvs := strings.Split(prof, "&")
+	profMap := make(map[string]string)
+	for _, kv := range kvs {
+		skv := strings.Split(kv, "=")
+		profMap[skv[0]] = skv[1]
+	}
+	fmt.Printf("%s\n", profMap)
+	return profMap
+}
+
+func ProfileFor(email string) string {
+	email = strings.Join(strings.Split(email, "="), "")
+	email = strings.Join(strings.Split(email, "&"), "")
+	return "email=" + email + "&uid=10&role=user"
+}
+
+func CheckAdmin(user map[string]string) bool {
+	if role, ok := user["role"]; ok && role != "admin" {
+		return false
+	}
+	return true
+}
+
+func MakeECBCutPasteOracle() (
+	func(email string) []byte,
+	func([]byte) map[string]string) {
+
+	key := RandomAESKey()
+	cryptUser := func(email string) []byte {
+		return EncryptECB(PadPKCS7([]byte(ProfileFor(email)), 16), key)
+	}
+	decryptAndParse := func(encrypted []byte) map[string]string {
+		return ParseProfile(string(UnpadPKCS7(DecryptECB(encrypted, key))))
+	}
+	return cryptUser, decryptAndParse
+}
+func UnpadPKCS7(padded []byte) []byte {
+	numToDrop := int(padded[len(padded)-1])
+	return padded[:len(padded)-numToDrop]
+}
+func ECBCutAndPaste(email string) map[string]string {
+	encryptOracle, decryptOracle := MakeECBCutPasteOracle()
+	//len(email=) == len(uid=xx) == 6
+	//len(role=user) == 9
+	//len(role=admin) == 10
+	//total w/o string == 15
+	//admin total w/o string == 16
+	//need email that gets user\xC\xC\xC\xC\xC\xC\xC\xC\xC\xC\xC\xC in its own block
+	//i.e. 5 chars long (1+len(user))
+	//then to pad admin\xB\xB\xB\xB\xB\xB\xB\xB\xB\xB\xB into a block
+	//then cut/paste
+	userBlock := encryptOracle("aaaaa")
+	userBlock = userBlock[len(userBlock)-16:]
+	adminArray := append([]byte("aaaaaaaaa admin"), bytes.Repeat([]byte{11}, 11)...)
+	adminBlock := encryptOracle(string(adminArray))
+	adminBlock = adminBlock[16 : 16*2]
+	spacePadding := strings.Repeat(" ", len(email)%4-1)
+	toElevate := encryptOracle(email + spacePadding)
+	elevated := append(toElevate[:len(toElevate)-16], adminBlock...)
+	return decryptOracle(elevated)
 }

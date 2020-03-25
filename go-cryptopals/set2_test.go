@@ -54,13 +54,20 @@ func TestECB_CBC_Oracle(t *testing.T) {
 	fmt.Printf("EBC: %d CBC: %d", ebc, cbc)
 }
 
-func ByteAtATimeECBDecryption(t *testing.T) {
+func TestByteAtATimeECBDecryption(t *testing.T) {
 	pretextString := "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK"
 	pretext, err := base64.StdEncoding.DecodeString(pretextString)
 	if err != nil {
 		t.Error(err)
 	}
 	oracle := MakeConsistentECBOracle(pretext)
-	SimpleECBDecrypt(oracle)
+	dec := SimpleECBDecrypt(oracle)
+	fmt.Printf("Decrypted: %s\n", dec)
 
+}
+
+func TestECBCopyPaste(t *testing.T) {
+	ParseProfile("foo=bar&baz=qux&zap=zazzle")
+	user := ECBCutAndPaste("foo@bar.com")
+	fmt.Printf("%t\n", CheckAdmin(user))
 }
