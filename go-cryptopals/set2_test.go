@@ -71,3 +71,28 @@ func TestECBCopyPaste(t *testing.T) {
 	user := ECBCutAndPaste("foo@bar.com")
 	fmt.Printf("%t\n", CheckAdmin(user))
 }
+func TestHardECBDecrypt(t *testing.T) {
+	//skip for now
+}
+
+func TestValidatePKCS7(t *testing.T) {
+	a := []byte("ICE ICE BABY\x04\x04\x04\x04")
+	err := ValidatePKCS7(a)
+	if err != nil {
+		t.Errorf("Padding check failed for %s\n", a)
+	}
+
+	a = []byte("ICE ICE BABY\x05\x05\x05\x05")
+	err = ValidatePKCS7(a)
+	if err == nil {
+		t.Error(err)
+	}
+
+	a = []byte("ICE ICE BABY\x01\x02\x03\x04")
+	err = ValidatePKCS7(a)
+	if err == nil {
+		t.Error(err)
+	}
+}
+
+func TestBitflippingAttack

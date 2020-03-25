@@ -6,6 +6,7 @@ import (
 	crand "crypto/rand"
 	"fmt"
 	"math/rand"
+	"regexp"
 	"strings"
 )
 
@@ -72,8 +73,10 @@ func EncryptECB(plaintext, key []byte) []byte {
 		panic("input not multiple of blocksize")
 	}
 	toRet := make([]byte, len(plaintext))
+	var toEnc []byte
 	for i := 0; i < len(plaintext)/blocksize; i++ {
-		ecb.Encrypt(toRet[i*blocksize:], plaintext[i*blocksize:])
+		toEnc = plaintext[i*blocksize:]
+		ecb.Encrypt(toRet[i*blocksize:], toEnc)
 	}
 	return toRet
 }
@@ -153,7 +156,6 @@ func SimpleECBDecrypt(oracle func([]byte) []byte) []byte {
 			prefix := bytes.Repeat([]byte("a"), j-1)
 			currDict := makeDict(prefix, decrypted)
 			//fmt.Printf("%v -> %v\n", append(prefix, decrypted[i:i+blockPos]...), oracle(prefix)[i:i+blockLength])
-
 			corrByte := currDict[string(oracle(prefix)[i:i+blockLength])]
 			decrypted = append(decrypted, corrByte)
 			if blockPos+i >= ciphertextLen {
@@ -227,4 +229,105 @@ func ECBCutAndPaste(email string) map[string]string {
 	toElevate := encryptOracle(email + spacePadding)
 	elevated := append(toElevate[:len(toElevate)-16], adminBlock...)
 	return decryptOracle(elevated)
+}
+
+func MakePaddedOracle(base []byte) func([]byte) []byte {
+	key := RandomAESKey()
+	unknown := append([]byte(nil), base...)
+	prefix := make([]byte, rand.Intn(100))
+	return func(input []byte) []byte {
+		toEncrypt := append(input, unknown...)
+		rand.Read(prefix)
+		toEncrypt = append(prefix, toEncrypt...)
+		return EncryptECB(PadPKCS7(toEncrypt, 16), key)
+	}
+}
+func HardECBDecrypt(oracle func([]byte) []byte) []byte {
+
+	isECB := false
+	blockLength := 0
+	for size := 1; size <= 256; size *= 2 {
+		blockLength += 1
+		checktext := bytes.Repeat([]byte("a"), size*5)
+		isECB = DetectECB(oracle(checktext)[size*3:size*5], size)
+		if isECB {
+			blockLength = size
+			break
+		}
+	}
+	if blockLength == 0 {
+		panic("Not ECB or block length > 256")
+	}
+	makeDict := func(prefix, known []byte) map[string]byte {
+		dict := make(map[string]byte)
+		if known != nil {
+			prefix = append(prefix, known...)
+			prefix = prefix[len(prefix)-blockLength+1:]
+		}
+		for i := 0; i < 256; i++ {
+			pt := append(prefix, byte(i))
+
+			or := oracle(pt)[:blockLength]
+			dict[string(or)] = byte(i)
+		}
+		return dict
+	}
+	subtext := bytes.Repeat([]byte("a"), blockLength-1)
+	firstByteDict := makeDict(subtext, nil)
+	encryptedFirstByte := oracle(subtext)[:blockLength]
+	firstByte := firstByteDict[string(encryptedFirstByte)]
+	fmt.Printf("First byte: %s\n", string(firstByte))
+	ciphertextLen := len(oracle([]byte(nil)))
+	decrypted := make([]byte, 0, ciphertextLen)
+	for i := 0; i < ciphertextLen; i += blockLength {
+		//fmt.Printf("Block: %d\n", i)
+		for j := blockLength; j > 0; j-- {
+			blockPos := blockLength - j
+			//fmt.Printf("  Byte: %d\n", j)
+			prefix := bytes.Repeat([]byte("a"), j-1)
+			currDict := makeDict(prefix, decrypted)
+			//fmt.Printf("%v -> %v\n", append(prefix, decrypted[i:i+blockPos]...), oracle(prefix)[i:i+blockLength])
+			corrByte := currDict[string(oracle(prefix)[i:i+blockLength])]
+			decrypted = append(decrypted, corrByte)
+			if blockPos+i >= ciphertextLen {
+				break
+			}
+		}
+
+	}
+
+	return decrypted
+
+}
+
+func ValidatePKCS7(padded []byte) error {
+	padByte := padded[len(padded)-1]
+	for i := len(padded) - 1; i > len(padded)-int(padByte)-1; i-- {
+		if padded[i] != padByte {
+			return fmt.Errorf("%v is not PKCS #7 padded", padded)
+		}
+	}
+	return nil
+}
+
+func MakeBitflippingOracle() (
+	encryptString func(string) []byte,
+	checkAdmin func([]byte) bool) {
+	key := RandomAESKey()
+	semiRE := regexp.MustCompile(";")
+	eqRE := regexp.MustCompile("=")
+	encryptString = func(in string) []byte {
+		in = semiRE.ReplaceAllLiteralString(in, "\";\"")
+		in = eqRE.ReplaceAllLiteralString(in, "\"=\"")
+		toEncrypt := "comment1=cooking%20MCs;userdata=" +
+			in +
+			";comment2=%20like%20a%20pound%20of%20bacon"
+		return EncryptECB([]byte(toEncrypt), key)
+	}
+	checkAdmin = func(in []byte) bool {
+		decrypted := string(UnpadPKCS7(DecryptECB(in, key)))
+		return strings.Contains(decrypted, ";admin=true;")
+
+	}
+
 }
