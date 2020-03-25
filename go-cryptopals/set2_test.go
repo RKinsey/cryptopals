@@ -95,4 +95,12 @@ func TestValidatePKCS7(t *testing.T) {
 	}
 }
 
-func TestBitflippingAttack
+func TestBitflippingAttack(t *testing.T) {
+	enc, check := MakeBitflippingOracle()
+	if check(enc(";admin=true;")) {
+		t.Error("Oracle should not accept \";admin=true;\"")
+	}
+	if !CBCBitFlip(enc, check) {
+		t.FailNow()
+	}
+}

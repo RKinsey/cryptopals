@@ -314,20 +314,27 @@ func MakeBitflippingOracle() (
 	encryptString func(string) []byte,
 	checkAdmin func([]byte) bool) {
 	key := RandomAESKey()
-	semiRE := regexp.MustCompile(";")
-	eqRE := regexp.MustCompile("=")
+	re := regexp.MustCompile(";|=")
+
 	encryptString = func(in string) []byte {
-		in = semiRE.ReplaceAllLiteralString(in, "\";\"")
-		in = eqRE.ReplaceAllLiteralString(in, "\"=\"")
+		iv := make([]byte, 16)
+		rand.Read(iv)
+		in = re.ReplaceAllLiteralString(in, "?")
 		toEncrypt := "comment1=cooking%20MCs;userdata=" +
 			in +
 			";comment2=%20like%20a%20pound%20of%20bacon"
-		return EncryptECB([]byte(toEncrypt), key)
+		return append(iv, EncryptCBC(PadPKCS7([]byte(toEncrypt), 16), iv, key)...)
 	}
 	checkAdmin = func(in []byte) bool {
-		decrypted := string(UnpadPKCS7(DecryptECB(in, key)))
+		iv := in[:16]
+		in = in[16:]
+		decrypted := string(UnpadPKCS7(DecryptCBC(in, iv, key)))
 		return strings.Contains(decrypted, ";admin=true;")
 
 	}
+	return
+}
 
+func CBCBitFlip(encryptString func(string) []byte, checkAdmin func([]byte) bool) bool {
+	return false
 }
